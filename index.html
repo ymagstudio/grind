@@ -6,13 +6,35 @@
 <meta name="theme-color" content="#0A0A0A">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="GRIND">
 <title>GRIND — Fitness Tracker</title>
+<link rel="manifest" href="#" id="manifest-placeholder">
+<script>
+// Inline PWA Manifest als Blob
+const manifest = {
+  name: "GRIND — Fitness Tracker",
+  short_name: "GRIND",
+  description: "Dein persönlicher Muscle Building Tracker",
+  start_url: "./",
+  display: "standalone",
+  background_color: "#0A0A0A",
+  theme_color: "#0A0A0A",
+  orientation: "portrait",
+  icons: [
+    { src: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' fill='%230A0A0A'/%3E%3Ctext x='256' y='340' font-family='Arial Black' font-weight='900' font-size='280' fill='%23C8FF00' text-anchor='middle'%3EG%3C/text%3E%3C/svg%3E", sizes: "512x512", type: "image/svg+xml", purpose: "any maskable" }
+  ]
+};
+const blob = new Blob([JSON.stringify(manifest)], {type:'application/json'});
+const murl = URL.createObjectURL(blob);
+document.getElementById('manifest-placeholder').href = murl;
+</script>
 
 <!-- ═══════════════════════════════════════════════════════
      🔑 GOOGLE CLIENT ID — HIER EINTRAGEN
      Anleitung unten im Kommentar
      ═══════════════════════════════════════════════════════ -->
-<meta name="google-client-id" content="YOUR_GOOGLE_CLIENT_ID_HERE">
+<meta name="google-client-id" content="343561388226-meuort49mffbqb35ip56r5hs2ofpr677.apps.googleusercontent.com">
 
 <!-- ═══════════════════════════════════════════════════════
      🔥 FIREBASE CONFIG — HIER EINTRAGEN
@@ -20,7 +42,7 @@
      ═══════════════════════════════════════════════════════ -->
 <script>
 const FIREBASE_CONFIG = {
-  apiKey: "AIzaSyDGOhZujtSEN-S6gBongv9eUzdB9yhPTf8",
+ apiKey: "AIzaSyDGOhZujtSEN-S6gBongv9eUzdB9yhPTf8",
   authDomain: "grind-app-76c96.firebaseapp.com",
   projectId: "grind-app-76c96",
   storageBucket: "grind-app-76c96.firebasestorage.app",
@@ -43,7 +65,7 @@ const FIREBASE_CONFIG = {
 
   let db = null;
   try {
-    if (FIREBASE_CONFIG.apiKey !== 'AIzaSyDGOhZujtSEN-S6gBongv9eUzdB9yhPTf8') {
+    if (FIREBASE_CONFIG.apiKey !== '343561388226-meuort49mffbqb35ip56r5hs2ofpr677.apps.googleusercontent.com') {
       const app = initializeApp(FIREBASE_CONFIG);
       db = getFirestore(app);
     }
@@ -119,6 +141,13 @@ const FIREBASE_CONFIG = {
     line-height: 1;
     margin-bottom: 8px;
   }
+
+  @keyframes logoPulse {
+    0%, 100% { filter: drop-shadow(0 0 0px rgba(200,255,0,0)); transform: scale(1); }
+    50% { filter: drop-shadow(0 0 18px rgba(200,255,0,0.35)); transform: scale(1.04); }
+  }
+
+  #login-screen svg { animation: logoPulse 3s ease-in-out infinite; }
 
   .login-tagline {
     color: var(--muted);
@@ -1013,6 +1042,35 @@ const FIREBASE_CONFIG = {
 
 <!-- ══════════ LOGIN ══════════ -->
 <div id="login-screen" style="display:flex">
+
+  <!-- SVG Logo -->
+  <div style="margin-bottom:12px">
+    <svg width="120" height="120" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+      <!-- Outer ring -->
+      <circle cx="60" cy="60" r="56" fill="none" stroke="#C8FF00" stroke-width="2" opacity="0.2"/>
+      <!-- Inner ring -->
+      <circle cx="60" cy="60" r="46" fill="#141414" stroke="#C8FF00" stroke-width="1.5" opacity="0.4"/>
+      <!-- Dumbbell bar -->
+      <rect x="22" y="56" width="76" height="8" rx="4" fill="#C8FF00"/>
+      <!-- Left weight outer -->
+      <rect x="14" y="40" width="16" height="40" rx="5" fill="#C8FF00"/>
+      <!-- Left weight inner -->
+      <rect x="18" y="44" width="8" height="32" rx="3" fill="#0A0A0A" opacity="0.4"/>
+      <!-- Right weight outer -->
+      <rect x="90" y="40" width="16" height="40" rx="5" fill="#C8FF00"/>
+      <!-- Right weight inner -->
+      <rect x="94" y="44" width="8" height="32" rx="3" fill="#0A0A0A" opacity="0.4"/>
+      <!-- Left collar -->
+      <rect x="30" y="50" width="10" height="20" rx="3" fill="#A8D900"/>
+      <!-- Right collar -->
+      <rect x="80" y="50" width="10" height="20" rx="3" fill="#A8D900"/>
+      <!-- Accent dot top -->
+      <circle cx="60" cy="18" r="3" fill="#C8FF00" opacity="0.6"/>
+      <!-- Accent dot bottom -->
+      <circle cx="60" cy="102" r="3" fill="#C8FF00" opacity="0.6"/>
+    </svg>
+  </div>
+
   <div class="login-logo">GRIND</div>
   <div class="login-tagline">Build. Track. Dominate.</div>
 
@@ -1041,7 +1099,17 @@ const FIREBASE_CONFIG = {
 
   <!-- Top Bar -->
   <div class="topbar">
-    <div class="topbar-logo">GRIND</div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <svg width="28" height="28" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="60" cy="60" r="56" fill="none" stroke="#C8FF00" stroke-width="3" opacity="0.25"/>
+        <rect x="22" y="56" width="76" height="8" rx="4" fill="#C8FF00"/>
+        <rect x="14" y="40" width="16" height="40" rx="5" fill="#C8FF00"/>
+        <rect x="90" y="40" width="16" height="40" rx="5" fill="#C8FF00"/>
+        <rect x="30" y="50" width="10" height="20" rx="3" fill="#A8D900"/>
+        <rect x="80" y="50" width="10" height="20" rx="3" fill="#A8D900"/>
+      </svg>
+      <div class="topbar-logo">GRIND</div>
+    </div>
     <div class="topbar-user">
       <span id="sync-indicator" style="font-size:11px;color:var(--accent);opacity:0;transition:opacity 0.3s;margin-right:4px;">↑ sync</span>
       <div id="user-avatar-wrap"></div>
@@ -1903,8 +1971,30 @@ function showToast(msg) {
 }
 
 // ═══════════════════════════════════════════════════════
-//  INIT
+//  SERVICE WORKER — PWA offline support
 // ═══════════════════════════════════════════════════════
+if ('serviceWorker' in navigator) {
+  const swCode = `
+const CACHE = 'grind-v1';
+const ASSETS = ['./', './index.html'];
+self.addEventListener('install', e => {
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).catch(()=>{}));
+  self.skipWaiting();
+});
+self.addEventListener('activate', e => {
+  e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k=>k!==CACHE).map(k=>caches.delete(k)))));
+  self.clients.claim();
+});
+self.addEventListener('fetch', e => {
+  if (e.request.method !== 'GET') return;
+  e.respondWith(
+    fetch(e.request).catch(() => caches.match(e.request).then(r => r || caches.match('./index.html')))
+  );
+});`;
+  const swBlob = new Blob([swCode], { type: 'application/javascript' });
+  const swUrl  = URL.createObjectURL(swBlob);
+  navigator.serviceWorker.register(swUrl).catch(() => {});
+}
 document.addEventListener('DOMContentLoaded', function() {
   // Check session
   try {
