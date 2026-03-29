@@ -42,7 +42,7 @@ document.getElementById('manifest-placeholder').href = murl;
      ═══════════════════════════════════════════════════════ -->
 <script>
 const FIREBASE_CONFIG = {
- apiKey: "AIzaSyDGOhZujtSEN-S6gBongv9eUzdB9yhPTf8",
+  apiKey: "AIzaSyDGOhZujtSEN-S6gBongv9eUzdB9yhPTf8",
   authDomain: "grind-app-76c96.firebaseapp.com",
   projectId: "grind-app-76c96",
   storageBucket: "grind-app-76c96.firebasestorage.app",
@@ -65,7 +65,7 @@ const FIREBASE_CONFIG = {
 
   let db = null;
   try {
-    if (FIREBASE_CONFIG.apiKey !== 'YOUR_API_KEY') {
+    if (FIREBASE_CONFIG.apiKey !== 'AIzaSyDGOhZujtSEN-S6gBongv9eUzdB9yhPTf8') {
       const app = initializeApp(FIREBASE_CONFIG);
       db = getFirestore(app);
     }
