@@ -12,12 +12,49 @@
      🔑 GOOGLE CLIENT ID — HIER EINTRAGEN
      Anleitung unten im Kommentar
      ═══════════════════════════════════════════════════════ -->
-<meta name="google-client-id" content="343561388226-meuort49mffbqb35ip56r5hs2ofpr677.apps.googleusercontent.com">
+<meta name="google-client-id" content="YOUR_GOOGLE_CLIENT_ID_HERE">
+
+<!-- ═══════════════════════════════════════════════════════
+     🔥 FIREBASE CONFIG — HIER EINTRAGEN
+     Anleitung: siehe Kommentar am Ende der Datei
+     ═══════════════════════════════════════════════════════ -->
+<script>
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyDGOhZujtSEN-S6gBongv9eUzdB9yhPTf8",
+  authDomain: "grind-app-76c96.firebaseapp.com",
+  projectId: "grind-app-76c96",
+  storageBucket: "grind-app-76c96.firebasestorage.app",
+  messagingSenderId: "157636421811",
+  appId: "1:157636421811:web:16af6cdd6d4c08aa90a8c6",
+  measurementId: "G-NJ10VHDCWF"
+};
+</script>
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 
 <script src="https://accounts.google.com/gsi/client" async defer></script>
+<script type="module" id="firebase-module">
+  import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
+  import {
+    getFirestore, doc, getDoc, setDoc, collection,
+    addDoc, getDocs, deleteDoc, query, orderBy
+  } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+
+  let db = null;
+  try {
+    if (FIREBASE_CONFIG.apiKey !== 'AIzaSyDGOhZujtSEN-S6gBongv9eUzdB9yhPTf8') {
+      const app = initializeApp(FIREBASE_CONFIG);
+      db = getFirestore(app);
+    }
+  } catch(e) { console.warn('Firebase init failed:', e); }
+
+  // Expose db and Firestore helpers to global scope
+  window._db = db;
+  window._fs = { doc, getDoc, setDoc, collection, addDoc, getDocs, deleteDoc, query, orderBy };
+  window._firebaseReady = true;
+  document.dispatchEvent(new Event('firebase-ready'));
+</script>
 
 <style>
   :root {
@@ -1006,6 +1043,7 @@
   <div class="topbar">
     <div class="topbar-logo">GRIND</div>
     <div class="topbar-user">
+      <span id="sync-indicator" style="font-size:11px;color:var(--accent);opacity:0;transition:opacity 0.3s;margin-right:4px;">↑ sync</span>
       <div id="user-avatar-wrap"></div>
       <button class="logout-btn" onclick="signOut()">← Logout</button>
     </div>
@@ -1220,43 +1258,178 @@ const TIERS = [
 ];
 
 // ═══════════════════════════════════════════════════════
-//  DATA LAYER
+//  DATA LAYER — Firebase Firestore + localStorage fallback
 // ═══════════════════════════════════════════════════════
 let currentUser = null;
+
+// ── Helpers ──────────────────────────────────────────
+function useFirebase() {
+  return !!window._db && currentUser && currentUser.id !== 'demo';
+}
 
 function getKey(k) {
   const uid = currentUser ? currentUser.id : 'demo';
   return `grind_${uid}_${k}`;
 }
 
-function load(key, fallback) {
+// localStorage fallback (demo mode / offline)
+function loadLocal(key, fallback) {
   try {
     const v = localStorage.getItem(getKey(key));
     return v !== null ? JSON.parse(v) : fallback;
   } catch { return fallback; }
 }
 
-function save(key, value) {
+function saveLocal(key, value) {
   localStorage.setItem(getKey(key), JSON.stringify(value));
 }
 
-function getData() {
-  return {
-    exercises: load('exercises', getDefaultExercises()),
-    workouts: load('workouts', []),
-    weeklyGoal: load('weeklyGoal', 4),
-    score: load('score', 0),
-    streak: load('streak', 0),
-    lastWorkoutDate: load('lastWorkoutDate', null),
-  };
+// ── Firestore paths ───────────────────────────────────
+function userDocRef() {
+  return window._fs.doc(window._db, 'users', currentUser.id);
 }
+function workoutsColRef() {
+  return window._fs.collection(window._db, 'users', currentUser.id, 'workouts');
+}
+function exercisesColRef() {
+  return window._fs.collection(window._db, 'users', currentUser.id, 'exercises');
+}
+
+// ── In-memory cache (populated on login) ─────────────
+let _cache = null;
 
 function getDefaultExercises() {
   return [
-    { id: 1, name: 'Bankdrücken', kg: 60, reps: 10, sets: 3 },
-    { id: 2, name: 'Kniebeugen', kg: 80, reps: 8, sets: 4 },
-    { id: 3, name: 'Kreuzheben', kg: 100, reps: 5, sets: 3 },
+    { id: 'default1', name: 'Bankdrücken', kg: 60, reps: 10, sets: 3 },
+    { id: 'default2', name: 'Kniebeugen',  kg: 80, reps: 8,  sets: 4 },
+    { id: 'default3', name: 'Kreuzheben',  kg: 100, reps: 5, sets: 3 },
   ];
+}
+
+function getData() {
+  if (_cache) return _cache;
+  // Fallback to localStorage (demo or before cache loaded)
+  return {
+    exercises:       loadLocal('exercises', getDefaultExercises()),
+    workouts:        loadLocal('workouts', []),
+    weeklyGoal:      loadLocal('weeklyGoal', 4),
+    score:           loadLocal('score', 0),
+    streak:          loadLocal('streak', 0),
+    lastWorkoutDate: loadLocal('lastWorkoutDate', null),
+  };
+}
+
+// ── Load all user data from Firestore into cache ──────
+async function loadFromFirestore() {
+  if (!useFirebase()) {
+    _cache = getData(); // use localStorage
+    return;
+  }
+  showSyncIndicator(true);
+  try {
+    const { getDoc, getDocs, query, orderBy } = window._fs;
+
+    // User profile doc (score, streak, goal, lastWorkoutDate)
+    const userSnap = await getDoc(userDocRef());
+    const profile = userSnap.exists() ? userSnap.data() : {};
+
+    // Workouts subcollection
+    const wSnap = await getDocs(window._fs.query(workoutsColRef(), window._fs.orderBy('date', 'asc')));
+    const workouts = wSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+    // Exercises subcollection
+    const eSnap = await getDocs(exercisesColRef());
+    const exercises = eSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+    _cache = {
+      exercises:       exercises.length ? exercises : getDefaultExercises(),
+      workouts,
+      weeklyGoal:      profile.weeklyGoal      ?? 4,
+      score:           profile.score            ?? 0,
+      streak:          profile.streak           ?? 0,
+      lastWorkoutDate: profile.lastWorkoutDate  ?? null,
+    };
+
+    // Mirror to localStorage as offline backup
+    saveLocal('exercises',       _cache.exercises);
+    saveLocal('workouts',        _cache.workouts);
+    saveLocal('weeklyGoal',      _cache.weeklyGoal);
+    saveLocal('score',           _cache.score);
+    saveLocal('streak',          _cache.streak);
+    saveLocal('lastWorkoutDate', _cache.lastWorkoutDate);
+
+  } catch(e) {
+    console.warn('Firestore load failed, using localStorage:', e);
+    _cache = getData();
+  }
+  showSyncIndicator(false);
+}
+
+// ── Save profile fields (score, streak, goal, etc.) ───
+async function saveProfile(fields) {
+  // Always update cache + localStorage immediately
+  if (_cache) Object.assign(_cache, fields);
+  Object.entries(fields).forEach(([k, v]) => saveLocal(k, v));
+
+  if (!useFirebase()) return;
+  try {
+    await window._fs.setDoc(userDocRef(), fields, { merge: true });
+  } catch(e) { console.warn('Firestore saveProfile failed:', e); }
+}
+
+// ── Save a workout entry ──────────────────────────────
+async function saveWorkoutEntry(entry) {
+  if (_cache) _cache.workouts.push(entry);
+  const workouts = loadLocal('workouts', []);
+  workouts.push(entry);
+  saveLocal('workouts', workouts);
+
+  if (!useFirebase()) return;
+  try {
+    const { id, ...data } = entry;
+    await window._fs.setDoc(
+      window._fs.doc(window._db, 'users', currentUser.id, 'workouts', String(id)),
+      data
+    );
+  } catch(e) { console.warn('Firestore saveWorkout failed:', e); }
+}
+
+// ── Save exercise ─────────────────────────────────────
+async function saveExerciseEntry(exercise) {
+  if (_cache) _cache.exercises.push(exercise);
+  const exercises = loadLocal('exercises', []);
+  exercises.push(exercise);
+  saveLocal('exercises', exercises);
+
+  if (!useFirebase()) return;
+  try {
+    const { id, ...data } = exercise;
+    await window._fs.setDoc(
+      window._fs.doc(window._db, 'users', currentUser.id, 'exercises', String(id)),
+      data
+    );
+  } catch(e) { console.warn('Firestore saveExercise failed:', e); }
+}
+
+// ── Delete exercise ───────────────────────────────────
+async function deleteExerciseFromDB(id) {
+  if (_cache) _cache.exercises = _cache.exercises.filter(e => e.id !== id && e.id !== String(id));
+  const exercises = loadLocal('exercises', []).filter(e => e.id !== id && e.id !== String(id));
+  saveLocal('exercises', exercises);
+
+  if (!useFirebase()) return;
+  try {
+    await window._fs.deleteDoc(
+      window._fs.doc(window._db, 'users', currentUser.id, 'exercises', String(id))
+    );
+  } catch(e) { console.warn('Firestore deleteExercise failed:', e); }
+}
+
+// ── Sync indicator ────────────────────────────────────
+function showSyncIndicator(on) {
+  let el = document.getElementById('sync-indicator');
+  if (!el) return;
+  el.style.opacity = on ? '1' : '0';
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1425,10 +1598,11 @@ function renderRecentWorkouts(workouts) {
   }).join('');
 }
 
-function adjustGoal(delta) {
-  let goal = load('weeklyGoal', 4) + delta;
+async function adjustGoal(delta) {
+  const data = getData();
+  let goal = (data.weeklyGoal || 4) + delta;
   goal = Math.max(1, Math.min(14, goal));
-  save('weeklyGoal', goal);
+  await saveProfile({ weeklyGoal: goal });
   renderHome();
 }
 
@@ -1506,41 +1680,27 @@ function updateLogBtn() {
   btn.disabled = !(selectedStudio || selectedExerciseIds.size > 0);
 }
 
-function logWorkout() {
+async function logWorkout() {
   const data = getData();
   const now = new Date();
+  const btn = document.getElementById('log-workout-btn');
+  btn.disabled = true;
+  btn.textContent = 'WIRD GESPEICHERT…';
 
-  // Calculate points
   let basePoints = 10;
   const weekWorkouts = getThisWeekWorkouts(data.workouts);
+  if (weekWorkouts.length + 1 >= data.weeklyGoal) basePoints += 5;
 
-  // Bonus for hitting goal
-  if (weekWorkouts.length + 1 >= data.weeklyGoal) {
-    basePoints += 5;
-  }
-
-  // Streak bonus
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  let streak = data.streak;
-
+  let streak = data.streak || 0;
   if (data.lastWorkoutDate) {
-    const last = new Date(data.lastWorkoutDate);
-    const diffDays = Math.floor((now - last) / (1000 * 60 * 60 * 24));
-    if (diffDays <= 1) {
-      streak += 1;
-    } else {
-      streak = 1;
-    }
+    const diffDays = Math.floor((now - new Date(data.lastWorkoutDate)) / (1000*60*60*24));
+    streak = diffDays <= 1 ? streak + 1 : 1;
   } else {
     streak = 1;
   }
-
-  // Streak bonus (every 7 days)
   if (streak > 0 && streak % 7 === 0) basePoints += 10;
 
   const workoutName = selectedStudio || `Custom (${selectedExerciseIds.size} Übungen)`;
-
   const entry = {
     id: Date.now(),
     date: now.toISOString(),
@@ -1550,24 +1710,19 @@ function logWorkout() {
     pointsEarned: basePoints,
   };
 
-  const workouts = [...data.workouts, entry];
-  const newScore = data.score + basePoints;
+  const newScore = (data.score || 0) + basePoints;
 
-  save('workouts', workouts);
-  save('score', newScore);
-  save('streak', streak);
-  save('lastWorkoutDate', now.toISOString());
+  await saveWorkoutEntry(entry);
+  await saveProfile({ score: newScore, streak, lastWorkoutDate: now.toISOString() });
 
   showToast(`+${basePoints} PUNKTE VERDIENT 🔥`);
 
-  // Reset
   selectedStudio = null;
   selectedExerciseIds = new Set();
   renderWorkoutPicker();
   renderHome();
   renderStats();
 
-  // Go to home
   setTimeout(() => {
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
     document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
@@ -1601,31 +1756,31 @@ function renderLibrary() {
     </div>`).join('');
 }
 
-function addExercise() {
+async function addExercise() {
   const name = document.getElementById('ex-name').value.trim();
-  const kg = parseFloat(document.getElementById('ex-kg').value) || 0;
-  const reps = parseInt(document.getElementById('ex-reps').value) || 10;
-  const sets = parseInt(document.getElementById('ex-sets').value) || 3;
+  const kg   = parseFloat(document.getElementById('ex-kg').value)  || 0;
+  const reps = parseInt(document.getElementById('ex-reps').value)  || 10;
+  const sets = parseInt(document.getElementById('ex-sets').value)  || 3;
 
   if (!name) { showToast('⚠️ NAME FEHLT'); return; }
 
-  const exercises = load('exercises', getDefaultExercises());
-  exercises.push({ id: Date.now(), name, kg, reps, sets });
-  save('exercises', exercises);
+  const exercise = { id: String(Date.now()), name, kg, reps, sets };
+  await saveExerciseEntry(exercise);
 
-  document.getElementById('ex-name').value = '';
-  document.getElementById('ex-kg').value = '';
-  document.getElementById('ex-reps').value = '';
-  document.getElementById('ex-sets').value = '';
+  document.getElementById('ex-name').value  = '';
+  document.getElementById('ex-kg').value    = '';
+  document.getElementById('ex-reps').value  = '';
+  document.getElementById('ex-sets').value  = '';
 
   renderLibrary();
+  renderWorkoutPicker();
   showToast('ÜBUNG GESPEICHERT ✓');
 }
 
-function deleteExercise(id) {
-  const exercises = load('exercises', []).filter(e => e.id !== id);
-  save('exercises', exercises);
+async function deleteExercise(id) {
+  await deleteExerciseFromDB(id);
   renderLibrary();
+  renderWorkoutPicker();
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1766,7 +1921,7 @@ document.addEventListener('DOMContentLoaded', function() {
   document.getElementById('app').style.display = 'none';
 });
 
-function launchApp() {
+async function launchApp() {
   // Save session
   try { sessionStorage.setItem('grind_user', JSON.stringify(currentUser)); } catch(e) {}
 
@@ -1777,37 +1932,84 @@ function launchApp() {
   appEl.style.flexDirection = 'column';
   appEl.style.minHeight = '100dvh';
 
-  // Render all screens
+  // Render avatar immediately
   renderUserAvatar();
+  setHomeDate();
+
+  // Show loading state
+  document.getElementById('screen-home').classList.add('active');
+  document.getElementById('home-score').textContent = '…';
+
+  // Load data from Firestore (or localStorage)
+  _cache = null;
+  await loadFromFirestore();
+
+  // Render all screens
   renderHome();
   renderLibrary();
   renderWorkoutPicker();
   renderStats();
-  setHomeDate();
 }
 </script>
 
 <!--
 ═══════════════════════════════════════════════════════════════
-  🔑 GOOGLE CLIENT ID EINRICHTEN — 5 MINUTEN ANLEITUNG
+  🔥 FIREBASE EINRICHTEN — SCHRITT FÜR SCHRITT
 ═══════════════════════════════════════════════════════════════
 
-1. Öffne: https://console.cloud.google.com/
-2. Neues Projekt erstellen (oder bestehendes wählen)
-3. Links: "APIs & Dienste" → "Anmeldedaten"
-4. "+ ANMELDEDATEN ERSTELLEN" → "OAuth-Client-ID"
-5. Anwendungstyp: "Webanwendung"
-6. Name: "GRIND App"
-7. Autorisierte JavaScript-Quellen:
-   - http://localhost (lokal)
-   - file:// (bei direktem Öffnen der HTML-Datei NICHT supported!)
-   → Am besten auf einen Webserver hochladen (z.B. GitHub Pages, Netlify)
-8. Deine Client-ID sieht so aus:
-   123456789-abc123.apps.googleusercontent.com
-9. Ersetze "YOUR_GOOGLE_CLIENT_ID_HERE" im <meta>-Tag oben
+SCHRITT 1 — Firebase-Projekt erstellen
+  1. Gehe zu: https://console.firebase.google.com/
+  2. Klicke „Projekt hinzufügen"
+  3. Name: "grind-app" → Weiter → Google Analytics deaktivieren → Projekt erstellen
 
-HINWEIS: Für lokales Testen funktioniert der Demo-Modus ohne Client ID.
-Als PWA auf dem Pixel 9: Öffne die Seite in Chrome → Menü → "Zum Startbildschirm hinzufügen"
+SCHRITT 2 — Web-App registrieren
+  1. Im Projektüberblick auf das </> Symbol klicken
+  2. App-Nickname: "GRIND" → App registrieren
+  3. Du siehst jetzt ein firebaseConfig-Objekt — das brauchst du gleich
+
+SCHRITT 3 — Firestore Datenbank erstellen
+  1. Im linken Menü: Build → Firestore Database
+  2. „Datenbank erstellen" klicken
+  3. Standort wählen (z. B. europe-west) → Weiter
+  4. Im Testmodus starten → Aktivieren
+  5. Nach 30 Tagen Sicherheitsregeln anpassen (siehe unten)
+
+SCHRITT 4 — Config in die App eintragen
+  Ersetze im <script>-Block oben die FIREBASE_CONFIG-Werte:
+
+  const FIREBASE_CONFIG = {
+    apiKey:            "AIzaSy...",          ← aus Firebase Console
+    authDomain:        "grind-app.firebaseapp.com",
+    projectId:         "grind-app",
+    storageBucket:     "grind-app.appspot.com",
+    messagingSenderId: "123456789",
+    appId:             "1:123456789:web:abc"
+  };
+
+SCHRITT 5 — Firebase Domain autorisieren
+  1. Firebase Console → Authentication → Settings → Autorisierte Domains
+  2. Deine GitHub Pages URL hinzufügen: DEINNAME.github.io
+
+SCHRITT 6 — Sicherheitsregeln (nach 30 Tagen)
+  In Firestore → Regeln folgendes eintragen:
+
+  rules_version = '2';
+  service cloud.firestore {
+    match /databases/{database}/documents {
+      match /users/{userId}/{document=**} {
+        allow read, write: if request.auth == null
+          && request.resource.data.keys().hasAll([]);
+        // Für jetzt: offener Testmodus
+        allow read, write: if true;
+      }
+    }
+  }
+
+═══════════════════════════════════════════════════════════════
+  🔑 GOOGLE CLIENT ID EINRICHTEN
+═══════════════════════════════════════════════════════════════
+  → Zeile 15: <meta name="google-client-id" content="DEINE_CLIENT_ID">
+  → Anleitung: console.cloud.google.com → Anmeldedaten → OAuth-Client-ID
 ═══════════════════════════════════════════════════════════════
 -->
 </body>
